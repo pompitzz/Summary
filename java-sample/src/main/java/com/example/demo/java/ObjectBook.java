@@ -1,4 +1,4 @@
-package com.example.demo;
+package com.example.demo.java;
 
 public class ObjectBook {
     public static void main(String[] args) {
@@ -9,6 +9,7 @@ public class ObjectBook {
 class Super {
     public void print() {
         hello();
+        StringBuffer buffer = new StringBuffer();
     }
 
     public void hello() {
