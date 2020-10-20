@@ -136,5 +136,3 @@ fun regex() {
     val regex2 = """\d\d""".toRegex()
 }
 ```
-
-## 로컬 함수와 확장

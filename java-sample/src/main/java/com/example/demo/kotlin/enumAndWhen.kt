@@ -128,3 +128,28 @@ fun main() {
     joinToString(separator = "|", collection = listOf(1, 2, 3))
     joinToString(collection = listOf(1, 2, 3))
 }
+
+// 주 생성자
+open class User (val name: String) {}
+
+// 위를 풀어쓰면 아래와 같다.
+class User2 constructor(_name: String) {
+    val name: String
+    init {
+        name = _name
+    }
+}
+
+// 부모의 생성자 호출은 아래와같이 가능
+class SubUser(name: String) : User(name)
+
+
+interface Member {
+    val name: String
+    // 다른 프로퍼티를 활용하여 커스텀 접근자를 가지는 프로퍼티를 구현할 수도 있다.(상태를 가지면 안되므로 Backing Field가 존재 안함)
+    val listCharName: Char
+        get() = name.lastChar
+}
+
+// 추상 프로퍼티는 반드시 구현되어야 한다.
+class PrivateMember(override val name: String) : Member {}
