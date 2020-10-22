@@ -27,17 +27,6 @@ public class DemoApplication {
 		}
 	}
 
-	public static void test(Mom<Parent> mom) {
-
-	}
-
-	public static void te() {
-		Mom<Child> childMom = new Mom<>();
-		Mom<Parent> parentMom = new Mom<>();
-
-		test(childMom);
-		test(parentMom);
-	}
 
 }
 
