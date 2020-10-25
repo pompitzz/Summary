@@ -20,12 +20,8 @@ fun <T> printClass(clazz: Class<T>) = println(clazz)
 
 inline fun <reified T> printClassUsingReified() = printClass(T::class.java)
 
-fun addContent(list: List<Any>) {
-}
-
-
 // out을 붙이면 해당 타입 파라미터를 생산할 수만 있게 되어 제역이 생긴다.
-class Herd<out T : Animal>(val animals: MutableList<Animal>) {
+class Herd<out T : Animal> {
     // T가 out 위치에 있으므로 가능. 생산은 가능
     fun getTypeParameter(): T = TODO()
 
@@ -60,10 +56,18 @@ fun<T> copyData(source: MutableList<out T>,
         destination.add(item)
     }
 }
-fun main() {
-    // 변성 규칙에 따라 Animal -> Double은 Cat -> Number의 하위 타입이므로 파라미터로 넘길 수 있다.
-    catToNumber { animal: Animal -> animal.getDouble() }
 
-    // 반환(생산)하는건(out) 클라이언트 입장에서 정해진 타입보다 하위 타입이 올 수 한다. 만약 상위 타입이 온다면 현재 반환 타입으로 지정한 타입의 모든것을 제공해줄 수 없다.
-    // 소비하는건(in) 정해진 타입보다 상위 타입이 올 수 있다. 상위 타입은 해당 타입이 가지는 최소한을 제공해줄 수 있으므로 해당 타입에 존재하는 소비가 가능하다. 하지만 만약 하위 타입이오면 해당 타입보다 더 특수화되었기 때문에 불가능하다.
+fun addContent(list: MutableList<Any>) {
+    list.add(1)
+}
+
+fun main() {
+    println(isA<String>(1)) // false
+    println(isA<String>("1")) // true
+
+//     변성 규칙에 따라 Animal -> Double은 Cat -> Number의 하위 타입이므로 파라미터로 넘길 수 있다.
+//    catToNumber { animal: Animal -> animal.getDouble() }
+//
+//     반환(생산)하는건(out) 클라이언트 입장에서 정해진 타입보다 하위 타입이 올 수 한다. 만약 상위 타입이 온다면 현재 반환 타입으로 지정한 타입의 모든것을 제공해줄 수 없다.
+//     소비하는건(in) 정해진 타입보다 상위 타입이 올 수 있다. 상위 타입은 해당 타입이 가지는 최소한을 제공해줄 수 있으므로 해당 타입에 존재하는 소비가 가능하다. 하지만 만약 하위 타입이오면 해당 타입보다 더 특수화되었기 때문에 불가능하다.
 }

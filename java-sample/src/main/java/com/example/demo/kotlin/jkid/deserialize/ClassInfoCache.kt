@@ -1,5 +1,10 @@
-package com.example.demo.kotlin.jkid
+package com.example.demo.kotlin.jkid.deserialize
 
+import com.example.demo.kotlin.jkid.DeserializeInterface
+import com.example.demo.kotlin.jkid.JsonName
+import com.example.demo.kotlin.jkid.serialize.ValueSerializer
+import com.example.demo.kotlin.jkid.serialize.getCustomSerializer
+import com.example.demo.kotlin.jkid.serialize.serializerForType
 import kotlin.reflect.KClass
 import kotlin.reflect.KParameter
 import kotlin.reflect.full.declaredMemberProperties
@@ -41,12 +46,12 @@ class ClassInfo<T : Any>(cls: KClass<T>) {
         // param setting
         val paramName = param.name ?: throw JKidException("Class $className has constructor parameter without name")
         val property = cls.declaredMemberProperties.find { it.name == paramName } ?: return
-        val name = property.findAnnotation<JsonName>()?.name ?: paramName
-        jsonNameToParamMap[name] = param
+        val propertyName = property.findAnnotation<JsonName>()?.name ?: paramName
+        jsonNameToParamMap[propertyName] = param
 
         // deserialize setting
         val deserializeClass = property.findAnnotation<DeserializeInterface>()?.targetClass?.java
-        jsonNameToDeserializeClassMap[name] = deserializeClass
+        jsonNameToDeserializeClassMap[propertyName] = deserializeClass
 
         // valueSerializer setting
         val valueSerializer = property.getCustomSerializer()
@@ -94,7 +99,6 @@ class ClassInfo<T : Any>(cls: KClass<T>) {
             }
         }
     }
-}
 }
 
 
