@@ -18,9 +18,13 @@ configurations {
 
 repositories {
 	mavenCentral()
+	jcenter()
 }
 
 dependencies {
+	def kotlinx_html_version = "0.7.2"
+	implementation("org.jetbrains.kotlinx:kotlinx-html-jvm:${kotlinx_html_version}")
+
 //	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.jetbrains.kotlin:kotlin-stdlib-jdk8'

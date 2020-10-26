@@ -22,6 +22,7 @@ inline fun <reified T> printClassUsingReified() = printClass(T::class.java)
 
 // out을 붙이면 해당 타입 파라미터를 생산할 수만 있게 되어 제역이 생긴다.
 class Herd<out T : Animal> {
+    val animals = emptyList<T>()
     // T가 out 위치에 있으므로 가능. 생산은 가능
     fun getTypeParameter(): T = TODO()
 
