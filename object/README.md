@@ -1,4 +1,5 @@
 # 오브젝트 (Object)
+- [서적 링크](http://www.kyobobook.co.kr/product/detailViewKor.laf?ejkGb=KOR&mallGb=KOR&barcode=9791158391409&orderClick=LEA&Kc=)
 
 ### [Chapter 1. 객체, 설계](./mds/ch1.md)
 ### [Chapter 2. 객체지향 프로그래밍](./mds/ch2.md)
