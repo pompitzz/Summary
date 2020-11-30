@@ -363,4 +363,482 @@ public class BlockingQueueEx {
 ```
 - Blocking Queue로 Producer-Consumer 기반의 FileCrawler, FilePrinter를 만들 수 있다.
 - Cralwer와 Printer는 BlockingQueue로만 의존하기 때문에 독립적인 확장이 가능하다.
-    - 독립적이기 때문에 시간이 오래 걸리는 부분에만 스레드 수를 늘릴 수 있다. 
+    - 독립적이기 때문에 시간이 오래 걸리는 부분에만 스레드 수를 늘릴 수 있기 때문에 확장성이 뛰어나다. 
+
+### 3. Thread 인터럽트
+- blocking 연산은 단순히 오래 걸리는 연산이 아니라, **특정 신호를 받아야 계속 실행할 수 있는 연산을 의미한다.**
+- 그러므로 blocking 연산은 InterruptedException를 발생시킬 수 있다.
+    - 대표적으로 Thread.sleep, BlockingQueue.take, BlockingQueue.take등이 있다.
+- 이러한 특징때문에 Thread 클래스는 interrupt 메서드를 제공하여 스레드를 중단시킬 수 있다. (호출 시 InterruptedException가 발생할 것이다)
+    - interrupt는 스레드 간의 협력을 위한 방법이므로 단지 interrupt를 요청하는 것이다. 
+    - interrupt를 호출한다고 즉시 스레드를 중단시키지 않는다.(적절한 시점에 알아서 중단시킨다)
+    
+
+#### InterruptedException 처리
+- 해당 예외를 던진다는 건 블로킹 메서드라는 의미이므로 해당 예외는 반드시 처리가 필요하다.
+- 일반적인 예외 처리 방식처럼 예외를 외부에 그대로 전달할 수도, 예외를 복구 시킬 수도 있다.
+- 가장 흔히 사용하는 방식은 Thread.currentThread().interrupt()를 호출하여 현재 스레드에서도 인터럽트를 발생시켜 상위 호출 메서드가 알 수 있도록 해주도록 한다.
+
+### 4. 동기화 클래스
+- 동기화 클래스는 상태 정보를 활용하여 스레드 간의 작업 흐름을 조절해주는 클래스이다.
+- 대표적으로 세마포어, 배리어, 래치, 블로킹 큐 등이 있이 있으며 각 클래스들은 서로 다른 특징을 가진다.
+
+#### 래치
+- 래치는 일종의 관문과 같이 특정 상태에 이르기 전까지 관문을 닫아 작업들을 막아두었다가, 특정 상태가 되면 관문을 열어 모든 작업을 동시에 실행시킬 수 있게 해준다.
+
+```java
+@Slf4j
+public class LatchTest {
+    public static void main(String[] args) throws InterruptedException {
+        int users = 5;
+        CountDownLatch readyLatch = new CountDownLatch(users);
+
+        IntStream.range(0, users)
+                .mapToObj(i -> createRunnable(readyLatch, i))
+                .forEach(CompletableFuture::runAsync);
+
+        log.info("모든 사용자가 Ready할 때 까지 대기");
+        readyLatch.await();
+        log.info("게임 시작");
+    }
+
+    private static Runnable createRunnable(CountDownLatch readyLatch, int i) {
+        return () -> {
+            try {
+                TimeUnit.SECONDS.sleep(i);
+                log.info(i + "번 사용자 Ready");
+                readyLatch.countDown();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        };
+    }
+}
+```
+- 래치의 동작은 게임에서 모든 유저가 레디되었을 때 게임이 시작되는 것을 생각해보면 된다.
+
+#### 세마포어
+- 특정 자원이나 특정 연산을 동시에 사용할 수 있는 수를 제한하고 싶을 때 사용할 수 있는 클래스이다.
+- 처음 생성 시 permit을 수를 지정해두고, acquire()로 permit 획득, release()로 permit 해제를 통해 수를 조절할 수 있다.
+
+#### 배리어
+- 다른 스레드를 특정 시점이 될 때 까지 기다리며, 해당 시점에 추가적인 작업을 수행할 수 있는 동기화 클래스이다.
+    - 래치는 일회성이지만 배리어(CyclicBarrier)는 특정 시점에 대해 계속해서 동기화를 수행할 수 있다.
+- 여러 스레드가 특정 배리어 포인트에서 기다렸다가 조건을 만족하면 필요한 작업을 수행하도록 할 수 있다.
+
+```java
+@Slf4j
+public class CyclicBarrierTest {
+    public static void main(String[] args) throws InterruptedException {
+        int threads = 5; 
+        CyclicBarrier cyclicBarrier = new CyclicBarrier(threads, () -> log.info("barrier action 수행"));
+
+        IntStream.range(0, threads * 2)
+                .forEach(i ->
+                        CompletableFuture.runAsync(() -> {
+                            try {
+                                log.info("barrier await");
+                                cyclicBarrier.await();
+                            } catch (InterruptedException | BrokenBarrierException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        })
+                );
+
+        Thread.sleep(1000);
+    }
+}
+```
+- threads * 2번의 작업을 수행하므로 barrier action은 두번 수행될 것이다. 
+
+### 5.효 율적이고 병렬성이 있는 캐시 구현하기
+```java
+@Slf4j
+public class Memozier<S, T> {
+    private final Computable<S, T> computable;
+    private final Map<S, Future<T>> cache;
+
+    public Memozier(Computable<S, T> computable) {
+        this.cache = new ConcurrentHashMap<>();
+        this.computable = computable;
+    }
+
+    public T compute(S source) {
+        Future<T> future = cache.get(source);
+        if (Objects.isNull(future)) {
+            FutureTask<T> futureTask = new FutureTask<>(() -> computable.compute(source));
+            // 단일 연산 메서드를 활용하여 안전성을 보장받을 수 있다.(동시에 해당 메서드를 호출해도 가장 먼저 put한 futureTask가 들어간다)
+            cache.putIfAbsent(source, futureTask);
+            future = cache.get(source);
+            futureTask.run();
+        }
+        try {
+            return future.get();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+
+interface Computable<S, T> {
+    T compute(S source);
+}
+```
+- ConcurrentHashMap과 Future를 적절히 활용하면 병렬성있는 캐시를 쉽게 구현할 수 있다. 
+
+## 작업 실행
+### 1. Executor 동작 주기
+```java
+public interface ExecutorService extends Executor {
+
+    // 안전한 종료 절차 진행
+    // - 새로운 작업은 받지 않지만 이전의 작업까지는 모두 끝냄
+    void shutdown();
+
+    // 강제 종료 절차 진행
+    // - 현재 진행 중인 작업도 가능하면 취소, 대기 중인 작업은 모두 취소
+    List<Runnable> shutdownNow();
+
+    boolean isShutdown();
+    
+    // 종료를 확인할 수 있는 플래그도 제공
+    boolean isTerminated();
+    
+    // ExecutorService가 종료 될 때 까지 기다릴 수 있다. 
+    // (shutdown -> awaitTermination 으로 바로 호출하면 동기적으로 ExecService를 종료할 것이다.) 
+    boolean awaitTermination(long timeout, TimeUnit unit)
+        throws InterruptedException;
+    
+    ...
+}
+```
+- 위 메서드 외에도 작업 추가 및 동작 주기를 관리할 수 있는 다양한 메서드를 제공한다.
+
+### 2. Timer보단 ScheduledThreadPoolExecutor를 사용하자
+#### Timer의 단점
+- 등록된 작업을 실행시키는 스레드가 하나이므로 실행을 예측할 수 없는 경우가 존재한다.
+    - 주기가 10ms, 작업 시간이 40ms일 경우 어떻게 실행되는지 예측할 수 없다.
+- 예외가 발생하면 Timer 스레드는 따로 예외를 처리하지 않기 때문에 스레드 자체가 멈출 수 있다.
+    - 추가적으로 새로운 스레드를 스스로 만들어 작업을 이어나가지 않게 되어 있다.
+    
+#### ScheduledThreadPoolExecutor
+- ScheduledThreadPoolExecutor를 사용하면 지연 작업 및 주기적 작업마다 여러 개의 스레드를 할당하여 작업을 원하는 시간에 실행할 수 있다.
+
+## 중단 및 종료
+- 스레드를 안전하고 빠르게 멈추게 하는 것은 어렵다. 자바에서는 스레드를 강제로 멈추게할 수 없고 인터럽트 요청을 보낼 뿐이다.
+- 스레드가 중지 요청을 받고 작업을 중지하기 전엔 그와 관련된 작업들을 모두 종료하고 스레드를 멈추어야 한다.
+    - 이러한 일은 스레드 자신이 처리하는 것이 가장 적절하고 시스템의 유연성을 키울 수 있다.
+    
+> 작업 중단 기능을 구현하고 적용하는건 모두 개발자의 몫이다.
+    
+### 1. 인터럽트
+- 인터럽트는 다른 스레드에서 수행되는 작업을 중지하기 위한 방법으로 적절하다.
+- Thread.currentThread().isInterrupted()를 통해 현재 스레드의 인터럽트 상태도 확인할 수 있다.
+
+#### 인터럽트 정책
+- 인터럽트 요청이 들어왔을 때 요청을 받은 스레드가 어떻게 처리할 지에 대한 인터럽트 정책이 수립되어야 한다.
+- 보통 범용적인 정책은 상위 수준의 메서드에도 현재 인터럽트가 발생한 것을 그대로 유지해서 알려줘 해당 측도 인터럽트에 대응할 수 있도록 하는 것이다.
+    - 보통 작업은 그작업을 소유하는 스레드가 아닌 스레드 풀과 같은 작업을 실행을 전담하는 스레드를 빌려 사용한다.
+    - 이런 작업 전용 스레드에서 인터럽트가 발생할 경우 해당 작업을 소유한 스레드에게도 인터럽트 상태를 알려줘 대응 가능하게 해주는 것이 좋다.
+    - 이런 이유로 인해 블로킹 메서드에서 인터럽트가 발생하면 그대로 인터럽트를 전달한다.  
+   
+#### 인터럽트 처리
+```java
+public class Test {
+    public Task getNextTask(BlockingQueue<Task> queue) {
+        boolean interrupted = false;
+        try {
+            while (true) {
+                try {
+                    return queue.take();
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                    // 그냥 넘어가고 재시도 한다.
+                }
+            }
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+}
+```
+- 바로 인터럽트를 넘겨주지 않고 모든 작업 완료 후 인터럽트 상태를 알려줄 수도 있다.
+
+### 2. 스레드 기반 서비스 중단
+- 스레드 풀을 사용하는 경우 애플리케이션이 종료될 때 스레드 풀을 안전하게 종료해야 한다.
+- 하지만 스레드를 선점적으로 종료할 순 없기 때문에 스레드에게 종료를 부탁해야 한다.(인터럽트를 걸어 종료를 요청해야 한다)
+- 이러한 스레드를 관리하는 일은 스레드를 생성하는 스레드 풀에서 담당해야 하며 ExecutorService는 shutdown, shutdownNow 메서드를 통해 종료 기능을 제공한다.
+
+#### 독약
+- 프로듀서-컨슈머 방식에서 독약이 되는 작업을 Queue에 넣어 해당 작업이 도착하면 종료하도록 만들 수 있다.
+
+#### ExecutorService shutdownNow 메서드 약점 보완
+- 해당 메서드는 수행되지 않는 작업은 제공해주지만, 실행 중이였다가 도중에 중지된 작업은 알려주지 않는다.
+- ExecutorService를 상속받아 이러한 기능을 제공하도록 만들 수 있다. 
+
+```java
+public class TrackingExecutor extends AbstractExecutorService {
+    private final ExecutorService exec;
+    private final Set<Runnable> tasksCancelledAtShutdown = Collections.synchronizedSet(new HashSet<>());
+
+    public TrackingExecutor(ExecutorService exec) {
+        this.exec = exec;
+    }
+
+    public List<Runnable> getCancelledTasks() {
+        if (!exec.isTerminated()) {
+            throw new IllegalStateException();
+        }
+        return new ArrayList<>(tasksCancelledAtShutdown);
+    }
+
+    @Override
+    public void execute(Runnable command) {
+        exec.execute(() -> {
+            try {
+                command.run();
+            } finally {
+                // 작업을 종료할 때 현재 작업이 도중에 중지되었는지 확인 후 컬렉션에 추가한다.
+                if (isShutdown() && Thread.currentThread().isInterrupted()) {
+                    tasksCancelledAtShutdown.add(command);
+                }
+            }
+        });
+    }
+
+    // 나머지 오버라이딩 메서드는 전부 위임한다.
+}
+```
+- 스레드 풀을 shutdownNow로 즉시 종료하였을 때 수행되지 않은 작업 뿐만 아니라 도중에 수행이 중지된 작업들도 확인할 수 있다.
+
+### 3. 비정상적인 스레드 상황 처리
+- 스레드에서 예외가 발생해 비정상적으로 종료되었을 때 UncaughtExceptionHandler를 통해 예외를 핸들링 할 수 있다.
+    - 해당 예외에서 필요한 로깅을 하던지, 스레드를 다시 생성하여 작업을 재개하도록 하는지 등을 할 수 있을 것이다.
+- ThreadPoolExecutor를 생성할 때 필요한 ThreadFactory에 해당 핸들러를 넘겨주면 됨.
+
+### 4. JVM 종료
+- JVM은 보통 1) 예정된 절차로 종료, 2) 갑자기 종료 되는 경우가 있다.
+
+#### 종료 훅
+- JVM이 예정된 절차로 종료될 경우 등록된 종료 훅을 동시에 실행시킨다.
+
+```java
+public void start() {
+    Runtime.getRuntime()
+            .addShutdownHook(new Thread() {
+                @Override
+                public void run() {
+                    LogService.this.stop();
+                }
+            });
+    logger.start();
+}
+```
+- 종료 훅을 이용하여 JVM이 종료될 때 원하는 Service가 stop되도록 할 수 있다.
+
+## 스레드 풀 활용
+### 1. 스레드 부족으로 인한 데드락
+- 스레드 풀에서 수행되는 작업이 의존성을 가지고 있으며, 스레드 풀이 충분히 크지 않을 경우 데드락이 걸릴 수 있다.
+
+```java
+public class ThreadDeadlock {
+    // 싱글 스레드 풀
+    ExecutorService exec = Executors.newSingleThreadExecutor();
+    
+    public class RenderPageTask implements Callable<String> {
+        public String call() throws Exception {
+            Future<String> header, footer;
+            header = exec.submit(new LoadFileTask("header.html"));
+            footer = exec.submit(new LoadFileTask("footer.html"));
+            String page = renderBody();
+
+            // 싱글 스레드 풀이므로 해당 연산은 영원히 종료되지 않는다.
+            return header.get() + page + footer.get();
+        }
+        
+    }
+}
+```
+- 싱글 스레드 풀이므로 의존성 있는 두 작업은 데드락에 걸린다.
+    - 스레드 풀에 서로 의존하는 작업이 만핟면 스레드 풀 수를 제한하지 않는 것이 좋다.
+- 데드락 이외에도 오래 걸리는 작업으로 인한 레이턴시 문제를 위해 타임아웃 설정 하자.
+
+### 2. 스레드 풀 크기 조절
+- [Java의 ThreadPoolExecutor, Spring의 ThreadPoolTaskExecutor 게시글 참고하자](https://pompitzz.github.io/blog/java/threadPoolExecutor.html)
+
+
+### 3. 스레드 풀 집중 대응 정책
+- 스레드 풀이 가득 차고, 큐 또한 가득차있다면 집중 대응 정책이 동작하며 기본적으로는 **중단 정책**이 적용된다.
+    - setRejectedExecutionHandler를 통해 대응 정책을 정할 수 있다. 
+
+#### 중단 정책
+- RejectedExecutionExecption예외를 던지기 때문에 execute를 호출하는 측에서 해당 예외 처리 필요
+
+#### 제거 정책
+- 추가하려고 한 작업을 제거시킴
+
+#### 오래된 항목 제거 정책
+- 가장 오래된 작업을 제거하고 새로운 작업을 추가함
+    - 우선순위 큐를 사용하고 있다면 우선순위가 가장 높은 작업이 제거될 것이므로 그런 경우 사용하지 말자.
+
+#### 호출자 실행 정책
+- 해당 작업을 호출한 스레드에서 실행하도록 하는 정책
+
+### 4. 스레드 팩토리
+- 스레드 풀에서 스레드를 생성할 땐 항상 스레드 팩토리에서 생성하게 된다.
+
+#### 스레드 팩토리를 직접 작성할 필요가 있는 경우
+- 스레드에 의미 있는 이름을 정의하거나, 스레드에 대한 로깅을 추가하거나, ExceptionHandler를 직접 지정하고 싶을 때 사용할 수 있다.
+
+```java
+@Slf4j
+public class MyAppThread extends Thread {
+    public static final String DEFAULT_NAME = "MyAppThread";
+    private static volatile boolean debugLifecycle = false;
+    private static final AtomicInteger created = new AtomicInteger();
+    private static final AtomicInteger alive = new AtomicInteger();
+
+    public MyAppThread(Runnable r) {
+        this(r, DEFAULT_NAME);
+    }
+
+    public MyAppThread(Runnable r, String name) {
+        super(r, name + "-" + created.incrementAndGet());
+        // 직접 예외 처리를 지정할 수 있다.
+        setUncaughtExceptionHandler((thread, exception) ->
+                log.error("UNCAUGHT in thread. threadName: {}", thread.getName(), exception));
+    }
+
+    @Override
+    public void run() {
+        boolean debug = debugLifecycle;
+        if (debug) log.debug("Created {}", getName());
+        try {
+            alive.incrementAndGet();
+            super.run();
+        } finally {
+            alive.decrementAndGet();
+            if (debug) log.debug("Exiting {}", getName());
+        }
+    }
+}
+```
+- 예외를 직접 핸들링하도록 하고, 스레드 운영에 대한 로깅 및 통계 처리를 가능하게 한다.
+
+### 4. ThreadPoolExecutor 상속
+- ThreadPoolExecutor를 상속받아 기능을 추가할 수 있고, beforeExecute 같은 훅 메서드를 활용할 수 있다.
+
+#### 훅 메서드 동작 방식
+- 훅 메서드는 Executor가 동작하는 과정에서 사용했던 각종 자원을 반납하는 등의 일을 처리하거나 마지막으로 특정 알람, 로깅, 통계 처리에 적당한 메서드이다.
+- afterExecute는 예외가 발생하더라도 반드시 동작하도록 되어 있다. (시스템 Error는 제외)
+- 하지만 beforeExecute에서 예외가 발생하면 작업이 수행되지 않아 afterExecute는 실행되지 않을 것이다.
+- terminated는 모든 작업과 모든 스레드가 종료되고 스레드 풀 종료 절차 마무리 후 마지막에 동작된다.
+
+#### 훅 메서드를 활용하여 통계 기능이 추가된 스레드 풀 구현
+```java
+@Slf4j
+public class TimingThreadPool extends ThreadPoolExecutor {
+    private final ThreadLocal<Long> startTime = new ThreadLocal<>();
+    private final AtomicLong numTasks = new AtomicLong();
+    private final AtomicLong totalTime = new AtomicLong();
+
+    public TimingThreadPool(int corePoolSize, int maximumPoolSize, long keepAliveTime, TimeUnit unit, BlockingQueue<Runnable> workQueue) {
+        super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue);
+    }
+
+    @Override
+    protected void beforeExecute(Thread t, Runnable r) {
+        super.beforeExecute(t, r);
+        log.debug("Thread {}: start {}", t, r);
+        startTime.set(System.nanoTime());
+    }
+
+    @Override
+    protected void afterExecute(Runnable r, Throwable t) {
+        try {
+            long endTime = System.nanoTime();
+            long taskTime = endTime - startTime.get(); // ThreadLocal을 활용하여 스레드별 고유 상태를 관리할 수 있다.
+            numTasks.incrementAndGet();
+            totalTime.addAndGet(taskTime);
+            log.debug("Thread {}: end {}, time: {}ns", t, r, taskTime);
+        } finally {
+            super.afterExecute(r, t);
+        }
+    }
+
+    @Override
+    protected void terminated() {
+        try {
+            log.info("Terminated: avg time={}ns", totalTime.get() / numTasks.get());
+        } finally {
+            super.terminated();
+        }
+    }
+}
+```
+
+## 데드락 및 그 밖의 활동성 문제
+### 1. 데드락
+- 보통 DB 시스템은 데드락을 검출한 후 복구 하는 기능이 있지만 JVM은 데드락을 회복할 수 없기 때문에 데드락이 발생하는 순간 게임은 끝이다.
+
+#### 락 순서에 의한 데드락
+```java
+public class LeftRightDeadlock {
+    private final Object left = new Object();
+    private final Object right = new Object();
+
+    public void leftRight() {
+        synchronized (left) {
+            synchronized (right) {
+                doSomeThing();
+            }
+        }
+    }
+    
+    public void rightLeft() {
+        synchronized (right) {
+            synchronized (left) {
+                doSomeThing();
+            }
+        }
+    }
+}
+```
+- leftRight(), rightLeft()를 동시에 수행하면 각각 하나씩 lock을 가져 데드락이 발생할 수 있다.
+- 꼭 순서대로 락을 얻는게 아니더라도, 객체간의 메시지 교환 상에서 순서로 인해 데드락이 발생할 수 있다.
+    - 객체 간의 메시지 교환으로 인해 발생하는 데드락을 방지하기 위해선 **오픈 호출**을 이용하자.
+    
+#### 오픈 호출
+- 외부 메서드를 호출할 땐 락을 확보하지 않은 상태에서 해당 메서드를 호출하는 것을 **오픈 호출**이라고 한다.
+
+### 2. 데드락 방지 및 원인 추적
+- 데드락 가능성을 확인 하기 위해선 여러 개의 락을 확보하는 부분을 찾아내야 한다.
+- 위에서 언급한 오픈 호출 방식을 활용하고 있다면 락을 찾기가 수월해질 것이다.
+
+#### 락의 시간 제한
+- Lock 클래스엔 시간 제한이 있는 tryLock이 존재한다. 
+- 암묵적인 동기화 블럭이 아닌 이를 활용하면 데드락을 방지할 수 있다.
+
+#### 스레드 덤프를 통해 데드락 분석
+- 데드락을 방지하는 것이 최우선이나, 데드락이 발생했다면 JVM이 만들어내는 스레드 덤프를 활용해 데드락이 발생한 위치를 알아내야 한다.
+- 스레드 덤프는 모든 스레드의 스택 트레이스가 담겨 있고, 스택의 어느 부분에서 어떤 락을 확보 했는지 그리고 대기 중인 스레드가 어느 락을 확보하려고 대기 중인지를 알 수 있다.
+- JVM은 스레드 덤프를 생성하기 전에 락 대기 상태 그래프에서 사이클이 발생했는지, 즉 데드락이 발생한 부분이 있는지 확인한다.
+    - 만약 데드락이 있다고 판단될 시 어느 락과 어느 스레드가 데드락에 관여하고 있는지에 대한 정보를 덤프에 포함시킨다.
+
+### 3. 그 밖의 활동성 문제점
+#### Starvation(기아 상태)
+- 스레드가 작업을 진행하는데 필요한 자원을 영영 할당받지 못하는 상태
+- 스레드가 우선순위에서 계속 밀려나 영영 자원을 할당 받지 못할 수 있다.
+- 스레드 순서를 지정할 수 있지만 운영체제에 의존적이므로 사용하지 말자.
+
+#### 늦은 응답
+- 여러 자원들이 CPU를 가지고 경쟁이 심해지면, 응답성이 떨어진게 된다.
+
+#### 라이브락
+- 대기 중인 상태가 아니더라도, 특정 작업의 결과를 받아야만 실행할 수 있는 작업이 존재할 때 선수 작업이 계속 실패하여 계속해서 재시도하게 무한 루프에 빠지는 상태
+    - 메시지 전송 -> 전송 실패 -> 전송 트랜잭션 롤백 후 큐에 쌓음 -> 큐에서 꺼내서 메시지 전송 -> 전송 실패 -> 전송 트랜잭션 롤백 후 큐에 쌓음
+    - 이러한 방식을 무한히 반복하는 것을 생각해보면 된다.
+
+> 라이브락은 에러를 너무 완벽하게 처리하고자 하여 회복 불가능한 에러를 회복할 수 있다고 판단해 무한히 재시도하는 과정에서 발생한다.
