@@ -970,3 +970,45 @@ public interface ReadWriteLock {
     Lock writeLock();
 } 
 ```
+
+## 자바 메모리 모델
+- 멀티프로세스 시스템에서 각 프로세서 안에는 개별적인 캐시 메모리를 보유하고 있다.
+- 즉 일반적인 경우 프로세스 간의 캐시 데이터 일관성은 보장받지 못한다.
+- 메모리 내용을 일관성 있게 프로세서간에 공유하기 위해선 하드웨어에 맞는 특별한 명령어(메모리 배리어)를 사용하여야 한다.
+- 하지만 자바에선 자체적인 메모리 모델인 JVM을 구성하고 JVM 내부적으로 이를 처리해주고 있기 때문에 하드웨어 메모리에 대해 신경쓰지 않아도 된다.
+- 자바에선 단지 프로그램 내부의 동기화 기법에만 집중하면 된다.
+
+### 1. 늦은 초기화 기법
+#### 더블 체크 락
+```java
+public class DoubleCheckedLocking {
+    private static Resource resource;
+    
+    public static Resource getInstance() {
+        if (resource == null) {
+            synchronized (DoubleCheckedLocking.class) {
+                if (resource == null) {
+                    resource = new Resource();
+                }
+            }
+        }
+        return resource;
+    }
+}
+```
+- 이 방식은 객체 생성자가 초기화 안전성을 보장하지 않는다면 스레드 안전성을 지키지 못한다.
+    - resource 자체는 null을 반환하지 않겠지만 resouce 객체 내부의 상태들은 올바르지 않은 값을 가질 수 있다.
+    
+#### 홀더 활용
+```
+public class EngerInitialization {
+    private static class ResourceHolder {
+        public static Resource resource = new Resource();
+    }
+    
+    public static Resource getResource() {
+        return ResourceHolder.resource;
+    }
+}
+```
+- JVM은 Holder 클래스를 사용하기 전 까지 클래스 초기화를 하지 않으므로 getResource()를 호출하기 전 까지 클래스를 초기화 하지 않는다. 
